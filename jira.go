@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,7 @@ var users = os.Getenv("J_WATCH_USERS")
 
 // invert time zone here
 var timeZone = -7
+var wg = sync.WaitGroup{}
 
 func main() {
 	//get input value from command line
@@ -35,8 +37,6 @@ func main() {
 
 	//prepare parameters
 	formattedUser := strings.ReplaceAll(*inUsers, ",", " ")
-	formattedUser = strings.ReplaceAll(formattedUser, " ", "+")
-	user := fmt.Sprintf("streams=user+IS+%v", formattedUser)
 	currentYear := time.Now().Year()
 	if len(*inDate) < 10 {
 		*inDate = fmt.Sprintf("%v-%v", *inDate, currentYear)
@@ -44,18 +44,32 @@ func main() {
 	timeFrom, _ := time.Parse("02-01-2006", *inDate)
 	timeFrom = timeFrom.Add(time.Hour * time.Duration(timeZone))
 	timeTo := timeFrom.Add(time.Hour * 24)
-	dateRange := fmt.Sprintf("streams=update-date+BETWEEN+%v+%v", timeFrom.UnixMilli(), timeTo.UnixMilli())
-	maxResult := fmt.Sprintf("maxResults=%v", 1000)
-	issueComment := "issues=activity+IS+comment:post"
-	url := fmt.Sprintf("%v/activity?%v&%v&%v&%v&%v", jiraURL, user, dateRange, maxResult, excludeConfluence, issueComment)
-
-	fmt.Println(url)
-	//fmt.Printf("Username: %v active from %v to %v\n", *inUsers, timeFrom.Format("02-01-2006"), timeTo.Format("02-01-2006"))
 
 	//validate data
 	if err := validateData(*inUsers); err != nil {
 		log.Fatalln(err)
 	}
+	checkActivities(formattedUser, inDate, isVerbose, timeFrom, timeTo)
+	wg.Wait()
+}
+
+func checkActivities(formattedUser string, inDate *string, isVerbose *bool, timeFrom time.Time, timeTo time.Time) {
+
+	for _, username := range strings.Split(formattedUser, " ") {
+		wg.Add(1)
+		go checkUserActivities(timeFrom, timeTo, username, inDate, isVerbose)
+	}
+}
+
+func checkUserActivities(timeFrom time.Time, timeTo time.Time, username string, inDate *string, isVerbose *bool) {
+	dateRange := fmt.Sprintf("streams=update-date+BETWEEN+%v+%v", timeFrom.UnixMilli(), timeTo.UnixMilli())
+	maxResult := fmt.Sprintf("maxResults=%v", 1000)
+	issueComment := "issues=activity+IS+comment:post"
+
+	url := fmt.Sprintf("%v/activity?streams=user+IS+%v&%v&%v&%v&%v", jiraURL, username, dateRange, maxResult, excludeConfluence, issueComment)
+
+	//fmt.Println(url)
+	//fmt.Printf("Username: %v active from %v to %v\n", *inUsers, timeFrom.Format("02-01-2006"), timeTo.Format("02-01-2006"))
 
 	//make request data
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -85,14 +99,13 @@ func main() {
 		key := author.UserName
 		groupedEntries[key] = append(groupedEntries[key], entry)
 	}
-	for _, key := range strings.Split(formattedUser, "+") {
-		entries := groupedEntries[key]
-		name := getUserName(key)
-		fmt.Printf("[%v] make [%v] comments on %v\n", name, len(entries), *inDate)
-		if *isVerbose {
-			printActionDetail(entries)
-		}
+	entries := groupedEntries[username]
+	name := getUserName(username)
+	fmt.Printf("[%v] make [%v] comments on %v\n", name, len(entries), *inDate)
+	if *isVerbose {
+		printActionDetail(entries)
 	}
+	wg.Done()
 }
 
 func getUserName(username string) string {
@@ -108,7 +121,7 @@ func getUserName(username string) string {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	displayName := gjson.Get(string(body), "displayName")
+	displayName := gjson.GetBytes(body, "displayName")
 	return displayName.String()
 }
 
