@@ -49,11 +49,11 @@ func main() {
 	if err := validateData(*inUsers); err != nil {
 		log.Fatalln(err)
 	}
-	checkActivities(formattedUser, inDate, isVerbose, timeFrom, timeTo)
+	checkActivities(formattedUser, *inDate, *isVerbose, timeFrom, timeTo)
 	wg.Wait()
 }
 
-func checkActivities(formattedUser string, inDate *string, isVerbose *bool, timeFrom time.Time, timeTo time.Time) {
+func checkActivities(formattedUser string, inDate string, isVerbose bool, timeFrom time.Time, timeTo time.Time) {
 
 	for _, username := range strings.Split(formattedUser, " ") {
 		wg.Add(1)
@@ -61,7 +61,7 @@ func checkActivities(formattedUser string, inDate *string, isVerbose *bool, time
 	}
 }
 
-func checkUserActivities(timeFrom time.Time, timeTo time.Time, username string, inDate *string, isVerbose *bool) {
+func checkUserActivities(timeFrom time.Time, timeTo time.Time, username string, inDate string, isVerbose bool) {
 	dateRange := fmt.Sprintf("streams=update-date+BETWEEN+%v+%v", timeFrom.UnixMilli(), timeTo.UnixMilli())
 	maxResult := fmt.Sprintf("maxResults=%v", 1000)
 	issueComment := "issues=activity+IS+comment:post"
@@ -101,8 +101,8 @@ func checkUserActivities(timeFrom time.Time, timeTo time.Time, username string, 
 	}
 	entries := groupedEntries[username]
 	name := getUserName(username)
-	fmt.Printf("[%v] make [%v] comments on %v\n", name, len(entries), *inDate)
-	if *isVerbose {
+	fmt.Printf("[%v] make [%v] comments on %v\n", name, len(entries), inDate)
+	if isVerbose {
 		printActionDetail(entries)
 	}
 	wg.Done()
@@ -129,15 +129,12 @@ func validateData(userNames string) error {
 	if len(userNames) == 0 {
 		return errors.New("list username can't be empty")
 	}
-
 	if len(token) == 0 {
 		return errors.New("jira token can't be empty")
 	}
-
 	if len(excludeConfluence) == 0 {
 		return errors.New("exclude confluence can't be empty")
 	}
-
 	if len(jiraURL) == 0 {
 		return errors.New("jira URL can't be empty")
 	}
